@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Audio Beacons</title>
+
+<!-- Viewport: locked, no pinch-zoom (a stray zoom mid-swipe would break gesture tracking) -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+
+<!-- iOS "Add to Home Screen" standalone app behaviour. These ONLY take effect when this file
+     is served with a real <head> (see README notes at the bottom of this file / the chat
+     explanation) - they will not work if this content is re-wrapped by something that
+     discards head tags. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Audio Beacons">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#05050a">
+<meta name="format-detection" content="telephone=no">
+
+<!-- 1x1 fallback icon so "Add to Home Screen" has something other than a page screenshot.
+     Swap for a real 180x180 PNG (as a data: URI, or a hosted file) whenever you like -->
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=">
+
+<style>
+  :root{
+    color-scheme: dark;
+    --bg: #05050a;
+    --fg: #f4f2ff;
+    --dim: #9b96b8;
+    --accent: #7c6cff;
+    --danger: #ff5470;
+    --ok: #4ee6a8;
+    --vh: 100vh; /* corrected in JS to avoid iOS Safari address-bar jumps */
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    height:100%; overscroll-behavior:none;
+  }
+  body{
+    height:var(--vh);
+    overflow:hidden;
+    -webkit-user-select:none; user-select:none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display:flex; flex-direction:column;
+  }
+  #app{ position:relative; flex:1; display:flex; flex-direction:column; min-height:0; }
+
+  .screen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    padding:32px 24px; gap:18px; overflow-y:auto;
+  }
+  .screen[hidden]{ display:none; }
+
+  h1{ font-size:1.6rem; margin:0 0 4px; }
+  h2{ font-size:1.3rem; margin:0 0 4px; }
+  p{ color:var(--dim); line-height:1.5; max-width:32em; margin:0; }
+  .score-line{ font-size:2.4rem; font-weight:700; margin:6px 0; }
+  .score-sub{ color:var(--dim); margin-bottom:8px; }
+
+  button{
+    font: inherit; font-weight:600; color:var(--bg); background:var(--accent);
+    border:none; border-radius:14px; padding:16px 26px; font-size:1.05rem;
+    min-height:52px; min-width:180px; cursor:pointer;
+  }
+  button.secondary{ background:transparent; color:var(--fg); border:2px solid var(--dim); }
+  button.danger{ background:var(--danger); color:#1a0008; }
+  button:active{ opacity:0.8; }
+  .btn-row{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
+
+  /* The live gameplay surface: intentionally blank. This is where raw swipe gestures are
+     captured. It is aria-hidden because VoiceOver should be OFF while this is on screen -
+     see the confirm screen. */
+  #playfield{ position:absolute; inset:0; touch-action:none; }
+
+  /* Small always-reachable pause corner button during play. A plain short tap (not a swipe)
+     also opens pause, so this is really a backup / visual affordance. */
+  #btn-pause{
+    position:absolute; top:calc(env(safe-area-inset-top) + 10px); right:calc(env(safe-area-inset-right) + 10px);
+    min-width:0; min-height:0; padding:10px 16px; font-size:0.85rem; background:rgba(255,255,255,0.08);
+    color:var(--fg); z-index:5;
+  }
+
+  .hud{
+    position:absolute; left:0; right:0; bottom:calc(env(safe-area-inset-bottom) + 14px);
+    text-align:center; color:var(--dim); font-size:0.95rem; pointer-events:none; z-index:5;
+  }
+  .hud b{ color:var(--fg); }
+
+  .visually-hidden{
+    position:absolute !important; width:1px; height:1px; overflow:hidden;
+    clip:rect(0 0 0 0); white-space:nowrap; border:0; padding:0; margin:-1px;
+  }
+
+  .flash{ animation: flash-anim 220ms ease-out; }
+  @keyframes flash-anim{ from{ background:rgba(255,84,112,0.35); } to{ background:transparent; } }
+
+  footer.credit{ position:fixed; bottom:2px; right:6px; font-size:0.65rem; color:#333; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== START SCREEN ===================== -->
+  <section id="screen-start" class="screen">
+    <h1 tabindex="-1">Audio Beacons</h1>
+    <p>A first-person audio shooter. Targets approach as sound beacons from five
+      positions around you &mdash; 9, 10:30, 12, 1:30 and 3 o'clock. Swipe toward a
+      beacon to shoot it before it reaches you.</p>
+    <div class="btn-row">
+      <button id="btn-start" type="button">Start</button>
+      <button id="btn-howtoplay" type="button" class="secondary">How to play</button>
+    </div>
+    <p id="high-score-line" class="score-sub" aria-live="polite"></p>
+  </section>
+
+  <!-- ===================== HOW TO PLAY ===================== -->
+  <section id="screen-help" class="screen" hidden>
+    <h2 tabindex="-1">How to play</h2>
+    <p>Targets appear quietly at one of five clock positions and get louder as they
+      close in. Swipe a single finger across the screen in the direction of a target's
+      position to fire at it &mdash; for example, swipe up-and-left toward 10:30, or
+      straight up toward 12. Swipe down to reload.</p>
+    <p>Some targets take more than one hit. If any target reaches full volume before
+      you destroy it, the run ends immediately, so prioritise whichever target sounds
+      closest.</p>
+    <p>This game is played with VoiceOver switched off, since its gestures would
+      otherwise conflict with aiming. Every menu, including this one, stays fully
+      VoiceOver-accessible.</p>
+    <div class="btn-row">
+      <button id="btn-help-back" type="button" class="secondary">Back</button>
+    </div>
+  </section>
+
+  <!-- ===================== VOICEOVER-OFF CONFIRM ===================== -->
+  <section id="screen-confirm" class="screen" hidden>
+    <h2 tabindex="-1">Turn VoiceOver off to begin</h2>
+    <p>Aiming uses raw swipe gestures, which VoiceOver intercepts for its own
+      navigation. Turn VoiceOver off now &mdash; triple-click the side button (or use
+      your usual shortcut), or switch it off from Control Centre &mdash; then choose
+      "I've turned it off" below.</p>
+    <p>Menus, pause and the end-of-round screen are all VoiceOver-accessible again as
+      soon as you return to them.</p>
+    <div class="btn-row">
+      <button id="btn-confirmed" type="button">I've turned VoiceOver off &mdash; Begin</button>
+      <button id="btn-confirm-back" type="button" class="secondary">Back</button>
+    </div>
+  </section>
+
+  <!-- ===================== PLAY SCREEN ===================== -->
+  <section id="screen-play" class="screen" hidden aria-hidden="true">
+    <div id="playfield"></div>
+    <button id="btn-pause" type="button">Pause</button>
+    <div class="hud" id="hud-text">Ammo: <b id="hud-ammo">6</b>/6 &nbsp;&middot;&nbsp; Score: <b id="hud-score">0</b></div>
+  </section>
+
+  <!-- ===================== PAUSE ===================== -->
+  <section id="screen-pause" class="screen" hidden>
+    <h2 tabindex="-1">Paused</h2>
+    <p id="pause-summary" class="score-sub"></p>
+    <div class="btn-row">
+      <button id="btn-resume" type="button">Resume</button>
+      <button id="btn-quit" type="button" class="danger">End run</button>
+    </div>
+  </section>
+
+  <!-- ===================== GAME OVER ===================== -->
+  <section id="screen-gameover" class="screen" hidden aria-live="polite">
+    <h2 id="gameover-heading" tabindex="-1">Run over</h2>
+    <p id="gameover-detail" class="score-sub"></p>
+    <p class="score-line" id="gameover-score">0</p>
+    <p class="score-sub" id="gameover-best"></p>
+    <div class="btn-row">
+      <button id="btn-again" type="button">Play again</button>
+      <button id="btn-menu" type="button" class="secondary">Main menu</button>
+    </div>
+  </section>
+
+</div>
+<footer class="credit">Audio Beacons</footer>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================================
+   CONFIG - tune everything here.
+   ===================================================================================== */
+
+// The five clock positions the game supports. angleDeg is measured clockwise from
+// straight up (12 o'clock = 0deg), matching how we bucket a swipe's direction.
+// pan is the stereo position fed to the Web Audio StereoPannerNode (-1 = full left).
+var POSITIONS = [
+  { id:'9',    label:'9 o’clock',   angleDeg:-90, pan:-1.0 },
+  { id:'1030', label:'10:30',        angleDeg:-45, pan:-0.55 },
+  { id:'12',   label:'12 o’clock',  angleDeg:0,   pan:0.0 },
+  { id:'130',  label:'1:30',         angleDeg:45,  pan:0.55 },
+  { id:'3',    label:'3 o’clock',   angleDeg:90,  pan:1.0 }
+];
+
+// Target types, gated by elapsed run time (seconds). `weight` controls how often a
+// type is picked among the currently-unlocked ones. approachMs is a [min,max] range
+// for how long the beacon takes to go from just-spawned to "at the player".
+var TARGET_TYPES = [
+  { key:'scout',  name:'Scout',  unlockAt:0,   hp:1, approachMs:[6200, 8200], weight:5, wave:'sine',     baseFreq:520, tremoloHz:2.2 },
+  { key:'runner', name:'Runner', unlockAt:25,  hp:1, approachMs:[3400, 4600], weight:4, wave:'triangle',  baseFreq:720, tremoloHz:5.5 },
+  { key:'brute',  name:'Brute',  unlockAt:50,  hp:3, approachMs:[7500, 9500], weight:3, wave:'sawtooth',  baseFreq:180, tremoloHz:1.3 },
+  { key:'wisp',   name:'Wisp',   unlockAt:80,  hp:1, approachMs:[2400, 3200], weight:3, wave:'sine',      baseFreq:980, tremoloHz:8 },
+  { key:'juggernaut', name:'Juggernaut', unlockAt:120, hp:5, approachMs:[10000, 12000], weight:2, wave:'sawtooth', baseFreq:120, tremoloHz:0.9 }
+];
+
+var DIFFICULTY = {
+  baseIntervalMs: 4200,   // spawn interval at t=0
+  minIntervalMs: 650,     // spawn interval floor, approached but never quite reached
+  rampSeconds: 150,       // rough time constant for the exponential decay toward the floor
+  burstChanceAt: 60,      // after this many seconds, occasional extra simultaneous spawns start
+  burstChance: 0.12
+};
+
+var WEAPON = {
+  magazineSize: 6,
+  reloadMs: 900
+};
+
+// Swipe recognition thresholds, in CSS pixels / ms.
+var GESTURE = {
+  minSwipeDistance: 28,   // shorter than this = a tap, not a swipe
+  maxTapDuration: 250,    // touches shorter than this AND under minSwipeDistance = tap
+  edgeGuardFraction: 0.08 // ignore raw touches starting within this fraction of the L/R edge
+};
+
+var STORAGE_KEY = 'audio-beacons-highscore-v1';
+
+/* =====================================================================================
+   AUDIO ENGINE
+   Placeholder beacons are synthesised (oscillator + tremolo) so the game is fully
+   playable before real sound files exist. Swap in real recordings later by replacing
+   makeTargetVoice() / playSfx() with AudioBufferSourceNode playback - the rest of the
+   game only calls the small interface below and does not care how the sound is made.
+   ===================================================================================== */
+
+function AudioEngine(){
+  this.ctx = null;
+  this.master = null;
+  this.unlocked = false;
+}
+
+AudioEngine.prototype.unlock = function(){
+  if (this.unlocked) return;
+  var Ctx = window.AudioContext || window.webkitAudioContext;
+  this.ctx = new Ctx();
+  this.master = this.ctx.createGain();
+  this.master.gain.value = 0.9;
+  this.master.connect(this.ctx.destination);
+  // iOS requires resume() inside a user-gesture handler.
+  if (this.ctx.state === 'suspended') this.ctx.resume();
+  // Unaudible blip to fully wake the audio hardware on some iOS versions.
+  var o = this.ctx.createOscillator();
+  var g = this.ctx.createGain();
+  g.gain.value = 0.0001;
+  o.connect(g).connect(this.master);
+  o.start();
+  o.stop(this.ctx.currentTime + 0.05);
+  this.unlocked = true;
+};
+
+// Creates a continuous "beacon" voice for one target. Returns a small controller object.
+// startGain/endGain are linear 0..1 gains; durationMs is how long the ramp from
+// startGain to endGain should take (i.e. time until the target "reaches" the player).
+AudioEngine.prototype.makeTargetVoice = function(type, panValue, startGain, endGain, durationMs){
+  var ctx = this.ctx;
+  var now = ctx.currentTime;
+
+  var osc = ctx.createOscillator();
+  osc.type = type.wave;
+  osc.frequency.value = type.baseFreq;
+
+  // Tremolo LFO gives each beacon a distinct pulsing character so target types are
+  // identifiable by ear alone.
+  var lfo = ctx.createOscillator();
+  lfo.frequency.value = type.tremoloHz;
+  var lfoGain = ctx.createGain();
+  lfoGain.gain.value = 0.35;
+  var tremolo = ctx.createGain();
+  tremolo.gain.value = 0.65;
+  lfo.connect(lfoGain).connect(tremolo.gain);
+
+  var panner = ctx.createStereoPanner();
+  panner.pan.value = panValue;
+
+  var voiceGain = ctx.createGain();
+  voiceGain.gain.setValueAtTime(startGain, now);
+  voiceGain.gain.linearRampToValueAtTime(endGain, now + durationMs / 1000);
+
+  osc.connect(tremolo).connect(panner).connect(voiceGain).connect(this.master);
+  osc.start(now);
+  lfo.start(now);
+
+  return {
+    gainNode: voiceGain,
+    // Cancel the arrival ramp (e.g. on a kill) and fade out quickly instead of clicking.
+    fadeOutAndStop: function(ms){
+      var t = ctx.currentTime;
+      var current = voiceGain.gain.value;
+      voiceGain.gain.cancelScheduledValues(t);
+      voiceGain.gain.setValueAtTime(current, t);
+      voiceGain.gain.linearRampToValueAtTime(0.0001, t + (ms || 120) / 1000);
+      osc.stop(t + (ms || 120) / 1000 + 0.02);
+      lfo.stop(t + (ms || 120) / 1000 + 0.02);
+    },
+    // Re-target the ramp, used if we ever want a "pushed back on hit" effect later.
+    rescheduleRamp: function(newEndGain, msFromNow){
+      var t = ctx.currentTime;
+      var current = voiceGain.gain.value;
+      voiceGain.gain.cancelScheduledValues(t);
+      voiceGain.gain.setValueAtTime(current, t);
+      voiceGain.gain.linearRampToValueAtTime(newEndGain, t + msFromNow / 1000);
+    }
+  };
+};
+
+// One-shot UI / feedback sounds, all synthesised. `name` selects a small built-in recipe.
+AudioEngine.prototype.playSfx = function(name, panValue){
+  if (!this.ctx) return;
+  var ctx = this.ctx;
+  var now = ctx.currentTime;
+  var pan = ctx.createStereoPanner();
+  pan.pan.value = panValue || 0;
+  var out = ctx.createGain();
+  pan.connect(out).connect(this.master);
+
+  function tone(freq, dur, type, gainPeak, delay){
+    var o = ctx.createOscillator();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    var g = ctx.createGain();
+    var t0 = now + (delay || 0);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gainPeak, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(pan);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
+  }
+
+  function noiseBurst(dur, gainPeak, delay){
+    var bufferSize = Math.floor(ctx.sampleRate * dur);
+    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for (var i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize); }
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    var g = ctx.createGain();
+    var t0 = now + (delay || 0);
+    g.gain.setValueAtTime(gainPeak, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(g).connect(pan);
+    src.start(t0);
+  }
+
+  switch(name){
+    case 'shoot':   tone(1400, 0.05, 'square', 0.18); noiseBurst(0.04, 0.12); break;
+    case 'hit':     tone(900, 0.08, 'triangle', 0.22); break;
+    case 'kill':    tone(600, 0.05, 'sawtooth', 0.2); tone(1200, 0.12, 'sine', 0.2, 0.05); break;
+    case 'miss':    tone(220, 0.09, 'sine', 0.12); break;
+    case 'empty':   tone(160, 0.06, 'square', 0.1); tone(120, 0.08, 'square', 0.1, 0.07); break;
+    case 'reload-start': tone(300, 0.1, 'sine', 0.15); break;
+    case 'reload-done':  tone(500, 0.06, 'sine', 0.18); tone(760, 0.08, 'sine', 0.18, 0.07); break;
+    case 'spawn':   tone(1800, 0.04, 'sine', 0.06); break;
+    case 'ui':      tone(700, 0.05, 'sine', 0.12); break;
+    case 'gameover':
+      tone(500, 0.18, 'sawtooth', 0.22);
+      tone(350, 0.22, 'sawtooth', 0.2, 0.12);
+      tone(220, 0.35, 'sawtooth', 0.2, 0.26);
+      break;
+    default: break;
+  }
+};
+
+/* =====================================================================================
+   GESTURE ENGINE
+   Distinguishes a short tap (pause) from a directional swipe (shoot) from a downward
+   swipe (reload). Only the first finger down is tracked; a second finger touching down
+   cancels the gesture. Listeners are non-passive so we can preventDefault() to stop
+   scrolling/rubber-banding/edge navigation from fighting with play.
+   ===================================================================================== */
+
+function GestureEngine(el, handlers){
+  this.el = el;
+  this.handlers = handlers; // { onTap, onSwipe(positionId), onReload, onSwipeUnrecognised }
+  this.active = null;
+  this._bind();
+}
+
+GestureEngine.prototype._bind = function(){
+  var self = this;
+  this.el.addEventListener('touchstart', function(e){ self._start(e); }, { passive:false });
+  this.el.addEventListener('touchmove',  function(e){ self._move(e); },  { passive:false });
+  this.el.addEventListener('touchend',   function(e){ self._end(e); },   { passive:false });
+  this.el.addEventListener('touchcancel',function(e){ self.active = null; }, { passive:false });
+};
+
+GestureEngine.prototype._start = function(e){
+  // Always swallow the event so Safari can't turn it into a page gesture (scroll,
+  // edge-swipe-back, pinch, etc). Safe even for the >1 finger case below.
+  e.preventDefault();
+
+  if (this.active){ this.active = null; return; } // a second finger landed - cancel
+  if (e.touches.length !== 1){ return; }
+
+  var t = e.touches[0];
+  var w = window.innerWidth;
+  if (t.clientX < w * GESTURE.edgeGuardFraction || t.clientX > w * (1 - GESTURE.edgeGuardFraction)){
+    // Extra caution near the screen edges where iOS's own back-swipe recogniser lives
+    // (mainly relevant if this ever runs inside plain Safari rather than standalone).
+    // We still track it, just flagged, so an intentional 9/3 o'clock swipe still works.
+  }
+  this.active = { x0:t.clientX, y0:t.clientY, x:t.clientX, y:t.clientY, t0:performance.now() };
+};
+
+GestureEngine.prototype._move = function(e){
+  e.preventDefault();
+  if (!this.active) return;
+  if (e.touches.length !== 1){ this.active = null; return; }
+  var t = e.touches[0];
+  this.active.x = t.clientX;
+  this.active.y = t.clientY;
+};
+
+GestureEngine.prototype._end = function(e){
+  e.preventDefault();
+  var g = this.active;
+  this.active = null;
+  if (!g) return;
+
+  var dx = g.x - g.x0;
+  var dy = g.y - g.y0;
+  var dist = Math.sqrt(dx*dx + dy*dy);
+  var duration = performance.now() - g.t0;
+
+  if (dist < GESTURE.minSwipeDistance && duration < GESTURE.maxTapDuration){
+    this.handlers.onTap && this.handlers.onTap();
+    return;
+  }
+  if (dist < GESTURE.minSwipeDistance){
+    return; // too slow and too short to be a deliberate swipe; ignore
+  }
+
+  // Screen space: down is +y. Convert to "clockwise degrees from straight up" so it
+  // lines up directly with POSITIONS[].angleDeg.
+  var angle = Math.atan2(dx, -dy) * (180 / Math.PI); // -180..180, 0 = up, 90 = right
+
+  // Reload: a swipe that's mostly downward (i.e. far from "up", the 0deg reference).
+  if (Math.abs(angle) > 135){
+    this.handlers.onReload && this.handlers.onReload();
+    return;
+  }
+
+  // Otherwise bucket to the nearest of the five target positions.
+  var best = null, bestDiff = Infinity;
+  for (var i=0;i<POSITIONS.length;i++){
+    var diff = Math.abs(angle - POSITIONS[i].angleDeg);
+    if (diff < bestDiff){ bestDiff = diff; best = POSITIONS[i]; }
+  }
+  if (best && bestDiff <= 40){
+    this.handlers.onSwipe && this.handlers.onSwipe(best.id);
+  } else {
+    this.handlers.onSwipeUnrecognised && this.handlers.onSwipeUnrecognised();
+  }
+};
+
+/* =====================================================================================
+   GAME
+   ===================================================================================== */
+
+function pickWeighted(items){
+  var total = 0;
+  for (var i=0;i<items.length;i++) total += items[i].weight;
+  var r = Math.random() * total;
+  for (i=0;i<items.length;i++){
+    r -= items[i].weight;
+    if (r <= 0) return items[i];
+  }
+  return items[items.length-1];
+}
+
+function randRange(range){ return range[0] + Math.random() * (range[1]-range[0]); }
+
+function Game(audio, ui){
+  this.audio = audio;
+  this.ui = ui;
+  this.reset();
+}
+
+Game.prototype.reset = function(){
+  this.targets = [];           // { id, typeKey, position, hp, maxHp, spawnAt, arrivalAt, voice }
+  this.nextTargetId = 1;
+  this.score = 0;
+  this.ammo = WEAPON.magazineSize;
+  this.reloading = false;
+  this.startedAt = 0;
+  this.nextSpawnAt = 0;
+  this.running = false;
+  this.paused = false;
+  this.pauseStartedAt = 0;
+  this.rafHandle = null;
+  this.spawnTimeoutHandle = null;
+};
+
+Game.prototype.start = function(){
+  this.reset();
+  this.running = true;
+  this.startedAt = performance.now();
+  this.ui.updateHud(this);
+  this._scheduleNextSpawn(1200); // small grace period before the first target
+  this._loop();
+};
+
+Game.prototype.elapsedSeconds = function(){
+  return (performance.now() - this.startedAt) / 1000;
+};
+
+Game.prototype._spawnInterval = function(){
+  var t = this.elapsedSeconds();
+  var span = DIFFICULTY.baseIntervalMs - DIFFICULTY.minIntervalMs;
+  return DIFFICULTY.minIntervalMs + span * Math.exp(-t / DIFFICULTY.rampSeconds);
+};
+
+Game.prototype._scheduleNextSpawn = function(overrideMs){
+  var self = this;
+  var delay = overrideMs != null ? overrideMs : this._spawnInterval();
+  this.spawnTimeoutHandle = setTimeout(function(){
+    if (!self.running) return;
+    self._spawnTarget();
+    if (self.elapsedSeconds() > DIFFICULTY.burstChanceAt && Math.random() < DIFFICULTY.burstChance){
+      self._spawnTarget(); // occasional extra simultaneous target once things ramp up
+    }
+    self._scheduleNextSpawn();
+  }, delay);
+};
+
+Game.prototype._spawnTarget = function(){
+  var t = this.elapsedSeconds();
+  var pool = TARGET_TYPES.filter(function(tt){ return tt.unlockAt <= t; });
+  var type = pickWeighted(pool);
+  var position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
+  var durationMs = randRange(type.approachMs);
+  var now = performance.now();
+
+  var voice = this.audio.makeTargetVoice(type, position.pan, 0.05, 1.0, durationMs);
+  this.audio.playSfx('spawn', position.pan);
+
+  this.targets.push({
+    id: this.nextTargetId++,
+    typeKey: type.key,
+    type: type,
+    position: position,
+    hp: type.hp,
+    maxHp: type.hp,
+    spawnAt: now,
+    arrivalAt: now + durationMs,
+    voice: voice
+  });
+};
+
+// progress: 0 (just spawned) .. 1 (has arrived)
+Game.prototype._progressOf = function(target, now){
+  return (now - target.spawnAt) / (target.arrivalAt - target.spawnAt);
+};
+
+Game.prototype._loop = function(){
+  var self = this;
+  function tick(){
+    if (!self.running) return;
+    var now = performance.now();
+    for (var i=0;i<self.targets.length;i++){
+      if (self._progressOf(self.targets[i], now) >= 1){
+        self._onTargetArrived(self.targets[i]);
+        return; // game over path takes over
+      }
+    }
+    self.rafHandle = requestAnimationFrame(tick);
+  }
+  this.rafHandle = requestAnimationFrame(tick);
+};
+
+Game.prototype._onTargetArrived = function(target){
+  this.audio.playSfx('gameover', target.position.pan);
+  this.endRun('arrived', target);
+};
+
+// Common end-of-run path, whether a target reached the player or the player quit early.
+Game.prototype.endRun = function(reason, target){
+  this.running = false;
+  if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
+  if (this.spawnTimeoutHandle) clearTimeout(this.spawnTimeoutHandle);
+  for (var i=0;i<this.targets.length;i++) this.targets[i].voice.fadeOutAndStop(250);
+  this._saveHighScoreIfNeeded();
+  this.ui.onGameOver(this, reason, target);
+};
+
+// Freezes both the JS-side timers and the actual Web Audio graph (so beacon volumes
+// stop ramping) while paused, and shifts every timestamp forward by the pause duration
+// on resume so nothing "jumps" - a target that was 80% of the way in stays at 80%.
+Game.prototype.pause = function(){
+  if (!this.running || this.paused) return;
+  this.paused = true;
+  this.running = false;
+  if (this.rafHandle) cancelAnimationFrame(this.rafHandle);
+  if (this.spawnTimeoutHandle) clearTimeout(this.spawnTimeoutHandle);
+  this.pauseStartedAt = performance.now();
+  if (this.audio.ctx) this.audio.ctx.suspend();
+};
+
+Game.prototype.resume = function(){
+  if (!this.paused) return;
+  var delta = performance.now() - this.pauseStartedAt;
+  this.startedAt += delta;
+  for (var i=0;i<this.targets.length;i++){
+    this.targets[i].spawnAt += delta;
+    this.targets[i].arrivalAt += delta;
+  }
+  this.paused = false;
+  this.running = true;
+  if (this.audio.ctx) this.audio.ctx.resume();
+  this._scheduleNextSpawn();
+  this._loop();
+};
+
+Game.prototype.shoot = function(positionId){
+  if (!this.running) return;
+  if (this.reloading){ this.audio.playSfx('empty', this._panFor(positionId)); return; }
+  if (this.ammo <= 0){ this.audio.playSfx('empty', this._panFor(positionId)); this.ui.updateHud(this); return; }
+
+  this.ammo -= 1; // a shot is consumed whether or not it hits, per design
+  this.audio.playSfx('shoot', this._panFor(positionId));
+
+  var candidates = this.targets.filter(function(tg){ return tg.position.id === positionId; });
+  if (candidates.length === 0){
+    this.audio.playSfx('miss', this._panFor(positionId));
+    this.ui.updateHud(this);
+    return;
+  }
+
+  // "Loudest first": among targets at this position, hit whichever has the greatest
+  // arrival progress (closest to the player).
+  var now = performance.now();
+  var target = candidates[0], bestProgress = this._progressOf(target, now);
+  for (var i=1;i<candidates.length;i++){
+    var p = this._progressOf(candidates[i], now);
+    if (p > bestProgress){ bestProgress = p; target = candidates[i]; }
+  }
+
+  target.hp -= 1;
+  if (target.hp <= 0){
+    target.voice.fadeOutAndStop(150);
+    this.targets.splice(this.targets.indexOf(target), 1);
+    this.score += target.maxHp; // tougher kills are worth a little more
+    this.audio.playSfx('kill', this._panFor(positionId));
+  } else {
+    this.audio.playSfx('hit', this._panFor(positionId));
+  }
+  this.ui.updateHud(this);
+};
+
+Game.prototype.reload = function(){
+  if (!this.running || this.reloading || this.ammo === WEAPON.magazineSize) return;
+  var self = this;
+  this.reloading = true;
+  this.audio.playSfx('reload-start', 0);
+  setTimeout(function(){
+    if (!self.running) return;
+    self.ammo = WEAPON.magazineSize;
+    self.reloading = false;
+    self.audio.playSfx('reload-done', 0);
+    self.ui.updateHud(self);
+  }, WEAPON.reloadMs);
+};
+
+Game.prototype._panFor = function(positionId){
+  for (var i=0;i<POSITIONS.length;i++) if (POSITIONS[i].id === positionId) return POSITIONS[i].pan;
+  return 0;
+};
+
+Game.prototype._saveHighScoreIfNeeded = function(){
+  try {
+    var best = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+    if (this.score > best){ localStorage.setItem(STORAGE_KEY, String(this.score)); }
+  } catch(e){ /* storage unavailable - not fatal */ }
+};
+
+Game.prototype.getHighScore = function(){
+  try { return parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10); }
+  catch(e){ return 0; }
+};
+
+/* =====================================================================================
+   UI WIRING
+   ===================================================================================== */
+
+var audio = new AudioEngine();
+var els = {};
+['screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover',
+ 'btn-start','btn-howtoplay','btn-help-back','btn-confirmed','btn-confirm-back',
+ 'btn-pause','btn-resume','btn-quit','btn-again','btn-menu',
+ 'playfield','hud-ammo','hud-score','pause-summary','gameover-heading','gameover-detail',
+ 'gameover-score','gameover-best','high-score-line'
+].forEach(function(id){ els[id] = document.getElementById(id); });
+
+var ui = {
+  updateHud: function(game){
+    els['hud-ammo'].textContent = game.ammo;
+    els['hud-score'].textContent = game.score;
+  },
+  onGameOver: function(game, reason, target){
+    if (reason === 'arrived'){
+      els['gameover-heading'].textContent = 'Run over';
+      els['gameover-detail'].textContent = 'A ' + target.type.name + ' reached you from ' + target.position.label + '.';
+    } else {
+      els['gameover-heading'].textContent = 'Run ended';
+      els['gameover-detail'].textContent = 'You ended the run manually.';
+    }
+    els['gameover-score'].textContent = game.score;
+    var best = game.getHighScore();
+    els['gameover-best'].textContent = game.score >= best ? 'New best!' : ('Best: ' + best);
+    showScreen('screen-gameover');
+  }
+};
+
+var game = new Game(audio, ui);
+var gesture = new GestureEngine(els['playfield'], {
+  onTap: function(){ pauseGame(); },
+  onSwipe: function(positionId){ game.shoot(positionId); },
+  onReload: function(){ game.reload(); },
+  onSwipeUnrecognised: function(){ /* ambiguous angle between two positions - no-op */ }
+});
+
+function showScreen(id){
+  ['screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover'].forEach(function(s){
+    var el = els[s];
+    if (!el) return;
+    if (s === id){ el.hidden = false; el.setAttribute('aria-hidden','false'); }
+    else { el.hidden = true; el.setAttribute('aria-hidden','true'); }
+  });
+  // Move focus to the new screen's heading so VoiceOver reliably announces the screen
+  // change and lands somewhere sensible, instead of relying on live-region timing alone.
+  var heading = els[id] && els[id].querySelector('h1, h2');
+  if (heading){
+    // Defer very slightly - iOS VoiceOver can miss a focus() that happens in the same
+    // tick as the click that triggered it.
+    setTimeout(function(){ heading.focus(); }, 30);
+  }
+}
+
+function pauseGame(){
+  if (!game.running) return;
+  game.pause();
+  els['pause-summary'].textContent = 'Score so far: ' + game.score;
+  showScreen('screen-pause');
+}
+
+function resumeGame(){
+  game.resume();
+  showScreen('screen-play');
+}
+
+els['btn-start'].addEventListener('click', function(){
+  audio.unlock();
+  audio.playSfx('ui');
+  showScreen('screen-confirm');
+});
+els['btn-howtoplay'].addEventListener('click', function(){ showScreen('screen-help'); });
+els['btn-help-back'].addEventListener('click', function(){ showScreen('screen-start'); });
+els['btn-confirm-back'].addEventListener('click', function(){ showScreen('screen-start'); });
+els['btn-confirmed'].addEventListener('click', function(){
+  showScreen('screen-play');
+  game.start();
+});
+els['btn-pause'].addEventListener('click', function(){ pauseGame(); });
+els['btn-resume'].addEventListener('click', function(){ resumeGame(); });
+els['btn-quit'].addEventListener('click', function(){
+  game.endRun('quit');
+});
+els['btn-again'].addEventListener('click', function(){
+  showScreen('screen-confirm');
+});
+els['btn-menu'].addEventListener('click', function(){
+  showScreen('screen-start');
+  refreshHighScoreLine();
+});
+
+function refreshHighScoreLine(){
+  var best = game.getHighScore();
+  els['high-score-line'].textContent = best > 0 ? ('Best score: ' + best) : '';
+}
+refreshHighScoreLine();
+
+/* Keep the 100vh-on-iOS-Safari problem (address bar show/hide) from shifting layout
+   mid-swipe. */
+function syncViewportHeight(){
+  document.documentElement.style.setProperty('--vh', window.innerHeight + 'px');
+}
+window.addEventListener('resize', syncViewportHeight);
+window.addEventListener('orientationchange', syncViewportHeight);
+syncViewportHeight();
+
+/* Block pinch/rotate gestures everywhere (Safari-only gesture events); menu screens still
+   scroll normally for long text at large Dynamic Type sizes, and the play surface handles
+   its own touch entirely via GestureEngine above. */
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+
+})();
+</script>
+</body>
+</html>
