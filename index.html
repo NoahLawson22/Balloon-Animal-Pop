@@ -2,18 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Audio Beacons</title>
+<title>Balloon Animal Pop</title>
 
 <!-- Viewport: locked, no pinch-zoom (a stray zoom mid-swipe would break gesture tracking) -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
 
 <!-- iOS "Add to Home Screen" standalone app behaviour. These ONLY take effect when this file
-     is served with a real <head> (see README notes at the bottom of this file / the chat
-     explanation) - they will not work if this content is re-wrapped by something that
-     discards head tags. -->
+     is served with a real <head> - see the chat explanation of why this ships as a plain
+     file rather than a hosted-artifact link. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Audio Beacons">
+<meta name="apple-mobile-web-app-title" content="Balloon Pop">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#05050a">
 <meta name="format-detection" content="telephone=no">
@@ -55,6 +54,12 @@
   }
   .screen[hidden]{ display:none; }
 
+  /* The boot screen is the ENTIRE screen acting as one giant button - a tap literally
+     anywhere unlocks audio/speech (which iOS requires a real user gesture for) and moves
+     on. No exploration needed since there's only one thing here. */
+  #screen-boot{ cursor:pointer; }
+  #screen-boot .boot-label{ font-size:1.4rem; font-weight:700; }
+
   h1{ font-size:1.6rem; margin:0 0 4px; }
   h2{ font-size:1.3rem; margin:0 0 4px; }
   p{ color:var(--dim); line-height:1.5; max-width:32em; margin:0; }
@@ -72,8 +77,7 @@
   .btn-row{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; }
 
   /* The live gameplay surface: intentionally blank. This is where raw swipe gestures are
-     captured. It is aria-hidden because VoiceOver should be OFF while this is on screen -
-     see the confirm screen. */
+     captured. VoiceOver must be off while this is on screen - see the confirm screen. */
   #playfield{ position:absolute; inset:0; touch-action:none; }
 
   /* Small always-reachable pause corner button during play. A plain short tap (not a swipe)
@@ -95,58 +99,65 @@
     clip:rect(0 0 0 0); white-space:nowrap; border:0; padding:0; margin:-1px;
   }
 
-  .flash{ animation: flash-anim 220ms ease-out; }
-  @keyframes flash-anim{ from{ background:rgba(255,84,112,0.35); } to{ background:transparent; } }
-
   footer.credit{ position:fixed; bottom:2px; right:6px; font-size:0.65rem; color:#333; pointer-events:none; }
 </style>
 </head>
 <body>
 <div id="app">
 
+  <!-- ===================== BOOT / UNLOCK ===================== -->
+  <!-- The whole section is the tappable target - iOS requires a genuine user gesture
+       before any audio (Web Audio OR speech synthesis) is allowed to play at all, so
+       nothing can be announced before this first tap. -->
+  <section id="screen-boot" class="screen" role="button" tabindex="0"
+           aria-label="Tap anywhere to begin Balloon Animal Pop">
+    <p class="boot-label">Tap anywhere to begin</p>
+    <p>Balloon Animal Pop</p>
+  </section>
+
   <!-- ===================== START SCREEN ===================== -->
-  <section id="screen-start" class="screen">
-    <h1 tabindex="-1">Audio Beacons</h1>
-    <p>A first-person audio shooter. Targets approach as sound beacons from five
-      positions around you &mdash; 9, 10:30, 12, 1:30 and 3 o'clock. Swipe toward a
-      beacon to shoot it before it reaches you.</p>
+  <section id="screen-start" class="screen" hidden>
+    <h1 tabindex="-1">Balloon Animal Pop</h1>
+    <p>An audio-only first-person shooter. Balloon animals approach as sound beacons
+      from five positions around you. Swipe toward one to pop it before it reaches you.</p>
     <div class="btn-row">
-      <button id="btn-start" type="button">Start</button>
-      <button id="btn-howtoplay" type="button" class="secondary">How to play</button>
+      <button id="btn-start" type="button" data-speak="Start">Start</button>
+      <button id="btn-howtoplay" type="button" class="secondary" data-speak="How to play">How to play</button>
     </div>
-    <p id="high-score-line" class="score-sub" aria-live="polite"></p>
+    <p id="high-score-line" class="score-sub"></p>
+    <p id="asset-status" class="score-sub"></p>
   </section>
 
   <!-- ===================== HOW TO PLAY ===================== -->
   <section id="screen-help" class="screen" hidden>
     <h2 tabindex="-1">How to play</h2>
-    <p>Targets appear quietly at one of five clock positions and get louder as they
-      close in. Swipe a single finger across the screen in the direction of a target's
-      position to fire at it &mdash; for example, swipe up-and-left toward 10:30, or
-      straight up toward 12. Swipe down to reload.</p>
-    <p>Some targets take more than one hit. If any target reaches full volume before
-      you destroy it, the run ends immediately, so prioritise whichever target sounds
-      closest.</p>
-    <p>This game is played with VoiceOver switched off, since its gestures would
-      otherwise conflict with aiming. Every menu, including this one, stays fully
-      VoiceOver-accessible.</p>
+    <p>Balloon animals approach as sound beacons from five positions &mdash; 9, 10:30,
+      12, 1:30 and 3 o'clock. They start quiet and get louder as they close in. Swipe a
+      single finger in the direction of a beacon to pop it, for example up-and-left
+      toward 10:30, or straight up toward 12. Swipe down to reload.</p>
+    <p>Some animals take more than one hit, and some approach faster than others. If any
+      animal reaches full volume before you pop it, the run ends immediately.</p>
+    <p>Popping uses raw swipes, so VoiceOver needs to be off for that part. Every other
+      screen, including this one, works by touch and spoken feedback on its own: touch
+      and slide your finger to hear your options, then lift your finger while on one to
+      choose it.</p>
     <div class="btn-row">
-      <button id="btn-help-back" type="button" class="secondary">Back</button>
+      <button id="btn-help-back" type="button" class="secondary" data-speak="Back">Back</button>
     </div>
   </section>
 
   <!-- ===================== VOICEOVER-OFF CONFIRM ===================== -->
   <section id="screen-confirm" class="screen" hidden>
     <h2 tabindex="-1">Turn VoiceOver off to begin</h2>
-    <p>Aiming uses raw swipe gestures, which VoiceOver intercepts for its own
-      navigation. Turn VoiceOver off now &mdash; triple-click the side button (or use
-      your usual shortcut), or switch it off from Control Centre &mdash; then choose
-      "I've turned it off" below.</p>
-    <p>Menus, pause and the end-of-round screen are all VoiceOver-accessible again as
-      soon as you return to them.</p>
+    <p>Popping balloons uses raw swipe gestures, which VoiceOver intercepts for its own
+      navigation. Turn VoiceOver off now if it isn't already &mdash; triple-click the
+      side button, or use your usual shortcut &mdash; then choose "I've turned it off"
+      below.</p>
+    <p>You won't need to turn it back on: every other screen, including this one, works
+      by touch and spoken feedback on its own.</p>
     <div class="btn-row">
-      <button id="btn-confirmed" type="button">I've turned VoiceOver off &mdash; Begin</button>
-      <button id="btn-confirm-back" type="button" class="secondary">Back</button>
+      <button id="btn-confirmed" type="button" data-speak="I've turned VoiceOver off. Begin.">I've turned VoiceOver off &mdash; Begin</button>
+      <button id="btn-confirm-back" type="button" class="secondary" data-speak="Back">Back</button>
     </div>
   </section>
 
@@ -162,8 +173,8 @@
     <h2 tabindex="-1">Paused</h2>
     <p id="pause-summary" class="score-sub"></p>
     <div class="btn-row">
-      <button id="btn-resume" type="button">Resume</button>
-      <button id="btn-quit" type="button" class="danger">End run</button>
+      <button id="btn-resume" type="button" data-speak="Resume">Resume</button>
+      <button id="btn-quit" type="button" class="danger" data-speak="End run">End run</button>
     </div>
   </section>
 
@@ -174,13 +185,13 @@
     <p class="score-line" id="gameover-score">0</p>
     <p class="score-sub" id="gameover-best"></p>
     <div class="btn-row">
-      <button id="btn-again" type="button">Play again</button>
-      <button id="btn-menu" type="button" class="secondary">Main menu</button>
+      <button id="btn-again" type="button" data-speak="Play again">Play again</button>
+      <button id="btn-menu" type="button" class="secondary" data-speak="Main menu">Main menu</button>
     </div>
   </section>
 
 </div>
-<footer class="credit">Audio Beacons</footer>
+<footer class="credit">Balloon Animal Pop</footer>
 
 <script>
 (function(){
@@ -201,15 +212,26 @@ var POSITIONS = [
   { id:'3',    label:'3 o’clock',   angleDeg:90,  pan:1.0 }
 ];
 
-// Target types, gated by elapsed run time (seconds). `weight` controls how often a
-// type is picked among the currently-unlocked ones. approachMs is a [min,max] range
-// for how long the beacon takes to go from just-spawned to "at the player".
+// Shared speed presets (ms to close the full distance), referenced by the animals below.
+var SPEED = {
+  slow:   [7200, 9200],
+  medium: [4800, 6200],
+  fast:   [2600, 3600]
+};
+
+// The six balloon animals, introduced in this order as the run progresses (unlockAt is
+// elapsed seconds). `weight` controls how often a type is picked among the currently
+// unlocked ones - later, tougher animals are weighted a little lower. `key` doubles as
+// the species name used for its sound file (see SOUND_FILES below) - keep them matching.
+// wave/baseFreq/tremoloHz are ONLY the placeholder-synth fallback used until a matching
+// file loads; they're irrelevant once you supply real recordings.
 var TARGET_TYPES = [
-  { key:'scout',  name:'Scout',  unlockAt:0,   hp:1, approachMs:[6200, 8200], weight:5, wave:'sine',     baseFreq:520, tremoloHz:2.2 },
-  { key:'runner', name:'Runner', unlockAt:25,  hp:1, approachMs:[3400, 4600], weight:4, wave:'triangle',  baseFreq:720, tremoloHz:5.5 },
-  { key:'brute',  name:'Brute',  unlockAt:50,  hp:3, approachMs:[7500, 9500], weight:3, wave:'sawtooth',  baseFreq:180, tremoloHz:1.3 },
-  { key:'wisp',   name:'Wisp',   unlockAt:80,  hp:1, approachMs:[2400, 3200], weight:3, wave:'sine',      baseFreq:980, tremoloHz:8 },
-  { key:'juggernaut', name:'Juggernaut', unlockAt:120, hp:5, approachMs:[10000, 12000], weight:2, wave:'sawtooth', baseFreq:120, tremoloHz:0.9 }
+  { key:'snake',      name:'Snake',      unlockAt:0,   hp:1, approachMs:SPEED.slow,   weight:5, wave:'sine',     baseFreq:300, tremoloHz:6.0 },
+  { key:'lion',        name:'Lion',       unlockAt:25,  hp:2, approachMs:SPEED.slow,   weight:4, wave:'sawtooth', baseFreq:140, tremoloHz:1.0 },
+  { key:'chimpanzee',  name:'Chimpanzee', unlockAt:55,  hp:1, approachMs:SPEED.medium, weight:4, wave:'triangle', baseFreq:500, tremoloHz:6.5 },
+  { key:'chipmunk',    name:'Chipmunk',   unlockAt:85,  hp:1, approachMs:SPEED.fast,   weight:3, wave:'sine',     baseFreq:1000, tremoloHz:9.0 },
+  { key:'elephant',    name:'Elephant',   unlockAt:115, hp:3, approachMs:SPEED.slow,   weight:2, wave:'sawtooth', baseFreq:90,  tremoloHz:0.8 },
+  { key:'eagle',       name:'Eagle',      unlockAt:150, hp:2, approachMs:SPEED.fast,   weight:2, wave:'triangle', baseFreq:850, tremoloHz:4.0 }
 ];
 
 var DIFFICULTY = {
@@ -232,32 +254,73 @@ var GESTURE = {
   edgeGuardFraction: 0.08 // ignore raw touches starting within this fraction of the L/R edge
 };
 
-var STORAGE_KEY = 'audio-beacons-highscore-v1';
+var STORAGE_KEY = 'balloon-animal-pop-highscore-v1';
+
+// ---------------------------------------------------------------------------------------
+// SOUND FILES. Drop real recordings in a "sounds" folder next to this HTML file, named
+// exactly as below, and they're picked up automatically - nothing else to wire up. Any
+// file that's missing (or fails to load) just falls back to the placeholder synth tone
+// for that one sound, so the game always runs even with zero files present.
+//
+// NOTE: fetching these files only works when this page is served over http(s) - opening
+// the file directly in Safari via file:// generally can't fetch sibling files. Host it
+// (GitHub Pages, Netlify, a local dev server, etc.) to get real audio loading.
+//
+// Target beacons should be a short, SEAMLESSLY LOOPING clip (they play on repeat for the
+// whole approach) - a continuous character sound or an evenly-spaced pulse both work.
+// ---------------------------------------------------------------------------------------
+var SOUND_FILES = {
+  // Per-animal beacon loops, one per species.
+  snake:      'sounds/snake.wav',
+  lion:       'sounds/lion.wav',
+  chimpanzee: 'sounds/chimpanzee.wav',
+  chipmunk:   'sounds/chipmunk.wav',
+  elephant:   'sounds/elephant.wav',
+  eagle:      'sounds/eagle.wav',
+  // One-shot action/feedback sounds.
+  shoot:         'sounds/shoot.wav',
+  hit:           'sounds/hit.wav',
+  kill:          'sounds/kill.wav',
+  miss:          'sounds/miss.wav',
+  empty:         'sounds/empty.wav',
+  'reload-start':'sounds/reload-start.wav',
+  'reload-done': 'sounds/reload-done.wav',
+  spawn:         'sounds/spawn.wav',
+  gameover:      'sounds/gameover.wav'
+};
 
 /* =====================================================================================
    AUDIO ENGINE
-   Placeholder beacons are synthesised (oscillator + tremolo) so the game is fully
-   playable before real sound files exist. Swap in real recordings later by replacing
-   makeTargetVoice() / playSfx() with AudioBufferSourceNode playback - the rest of the
-   game only calls the small interface below and does not care how the sound is made.
+   Prefers a real recording from SOUND_FILES/this.buffers when one has loaded; otherwise
+   falls back to a synthesised placeholder tone so the game is always fully playable.
    ===================================================================================== */
 
 function AudioEngine(){
   this.ctx = null;
   this.master = null;
   this.unlocked = false;
+  this.buffers = {};       // name -> decoded AudioBuffer, once loaded
+  this.assetStatus = null; // { loaded, total } after loadAssets() resolves
 }
 
 AudioEngine.prototype.unlock = function(){
   if (this.unlocked) return;
+
+  // Route this page's audio through the "playback" media category so the game's sound
+  // still plays with the phone's physical silent switch flipped. By default Web Audio in
+  // Safari uses the "ambient" category, which iOS silences on that switch exactly like a
+  // system sound effect - a serious problem for an audio-only game. Available iOS 17+;
+  // harmlessly does nothing on older versions or other browsers.
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; }
+  catch(e){ /* not supported here - game still works, just may follow the mute switch */ }
+
   var Ctx = window.AudioContext || window.webkitAudioContext;
   this.ctx = new Ctx();
   this.master = this.ctx.createGain();
   this.master.gain.value = 0.9;
   this.master.connect(this.ctx.destination);
-  // iOS requires resume() inside a user-gesture handler.
   if (this.ctx.state === 'suspended') this.ctx.resume();
-  // Unaudible blip to fully wake the audio hardware on some iOS versions.
+  // Inaudible blip to fully wake the audio hardware on some iOS versions.
   var o = this.ctx.createOscillator();
   var g = this.ctx.createGain();
   g.gain.value = 0.0001;
@@ -267,26 +330,37 @@ AudioEngine.prototype.unlock = function(){
   this.unlocked = true;
 };
 
+// Fetches and decodes every file in SOUND_FILES. Safe to call even if some/all are
+// missing - failures just leave that entry out of this.buffers, so callers keep using
+// the synth fallback for it. Resolves with a small { loaded, total } summary.
+AudioEngine.prototype.loadAssets = function(){
+  var self = this;
+  var names = Object.keys(SOUND_FILES);
+  var jobs = names.map(function(name){
+    return fetch(SOUND_FILES[name]).then(function(r){
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.arrayBuffer();
+    }).then(function(buf){
+      return self.ctx.decodeAudioData(buf);
+    }).then(function(decoded){
+      self.buffers[name] = decoded;
+      return true;
+    }).catch(function(){
+      return false;
+    });
+  });
+  return Promise.all(jobs).then(function(results){
+    self.assetStatus = { loaded: results.filter(Boolean).length, total: names.length };
+    return self.assetStatus;
+  });
+};
+
 // Creates a continuous "beacon" voice for one target. Returns a small controller object.
 // startGain/endGain are linear 0..1 gains; durationMs is how long the ramp from
 // startGain to endGain should take (i.e. time until the target "reaches" the player).
 AudioEngine.prototype.makeTargetVoice = function(type, panValue, startGain, endGain, durationMs){
   var ctx = this.ctx;
   var now = ctx.currentTime;
-
-  var osc = ctx.createOscillator();
-  osc.type = type.wave;
-  osc.frequency.value = type.baseFreq;
-
-  // Tremolo LFO gives each beacon a distinct pulsing character so target types are
-  // identifiable by ear alone.
-  var lfo = ctx.createOscillator();
-  lfo.frequency.value = type.tremoloHz;
-  var lfoGain = ctx.createGain();
-  lfoGain.gain.value = 0.35;
-  var tremolo = ctx.createGain();
-  tremolo.gain.value = 0.65;
-  lfo.connect(lfoGain).connect(tremolo.gain);
 
   var panner = ctx.createStereoPanner();
   panner.pan.value = panValue;
@@ -295,9 +369,35 @@ AudioEngine.prototype.makeTargetVoice = function(type, panValue, startGain, endG
   voiceGain.gain.setValueAtTime(startGain, now);
   voiceGain.gain.linearRampToValueAtTime(endGain, now + durationMs / 1000);
 
-  osc.connect(tremolo).connect(panner).connect(voiceGain).connect(this.master);
-  osc.start(now);
-  lfo.start(now);
+  var stopFns = [];
+  var buffer = this.buffers[type.key];
+
+  if (buffer){
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true; // your recording should loop seamlessly
+    src.connect(panner);
+    src.start(now);
+    stopFns.push(function(stopAt){ try { src.stop(stopAt); } catch(e){} });
+  } else {
+    var osc = ctx.createOscillator();
+    osc.type = type.wave;
+    osc.frequency.value = type.baseFreq;
+    // Tremolo LFO gives each placeholder beacon a distinct pulsing character.
+    var lfo = ctx.createOscillator();
+    lfo.frequency.value = type.tremoloHz;
+    var lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.35;
+    var tremolo = ctx.createGain();
+    tremolo.gain.value = 0.65;
+    lfo.connect(lfoGain).connect(tremolo.gain);
+    osc.connect(tremolo).connect(panner);
+    osc.start(now);
+    lfo.start(now);
+    stopFns.push(function(stopAt){ try { osc.stop(stopAt); lfo.stop(stopAt); } catch(e){} });
+  }
+
+  panner.connect(voiceGain).connect(this.master);
 
   return {
     gainNode: voiceGain,
@@ -308,8 +408,8 @@ AudioEngine.prototype.makeTargetVoice = function(type, panValue, startGain, endG
       voiceGain.gain.cancelScheduledValues(t);
       voiceGain.gain.setValueAtTime(current, t);
       voiceGain.gain.linearRampToValueAtTime(0.0001, t + (ms || 120) / 1000);
-      osc.stop(t + (ms || 120) / 1000 + 0.02);
-      lfo.stop(t + (ms || 120) / 1000 + 0.02);
+      var stopAt = t + (ms || 120) / 1000 + 0.02;
+      stopFns.forEach(function(fn){ fn(stopAt); });
     },
     // Re-target the ramp, used if we ever want a "pushed back on hit" effect later.
     rescheduleRamp: function(newEndGain, msFromNow){
@@ -322,15 +422,24 @@ AudioEngine.prototype.makeTargetVoice = function(type, panValue, startGain, endG
   };
 };
 
-// One-shot UI / feedback sounds, all synthesised. `name` selects a small built-in recipe.
+// One-shot UI / feedback sounds. Uses the matching file from SOUND_FILES if it has
+// loaded; otherwise falls back to a small built-in synthesised recipe for `name`.
 AudioEngine.prototype.playSfx = function(name, panValue){
   if (!this.ctx) return;
   var ctx = this.ctx;
   var now = ctx.currentTime;
   var pan = ctx.createStereoPanner();
   pan.pan.value = panValue || 0;
-  var out = ctx.createGain();
-  pan.connect(out).connect(this.master);
+  pan.connect(this.master);
+
+  var buffer = this.buffers[name];
+  if (buffer){
+    var src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(pan);
+    src.start(now);
+    return;
+  }
 
   function tone(freq, dur, type, gainPeak, delay){
     var o = ctx.createOscillator();
@@ -348,11 +457,11 @@ AudioEngine.prototype.playSfx = function(name, panValue){
 
   function noiseBurst(dur, gainPeak, delay){
     var bufferSize = Math.floor(ctx.sampleRate * dur);
-    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    var data = buffer.getChannelData(0);
+    var buffer2 = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer2.getChannelData(0);
     for (var i=0;i<bufferSize;i++){ data[i] = (Math.random()*2-1) * (1 - i/bufferSize); }
     var src = ctx.createBufferSource();
-    src.buffer = buffer;
+    src.buffer = buffer2;
     var g = ctx.createGain();
     var t0 = now + (delay || 0);
     g.gain.setValueAtTime(gainPeak, t0);
@@ -381,7 +490,34 @@ AudioEngine.prototype.playSfx = function(name, panValue){
 };
 
 /* =====================================================================================
-   GESTURE ENGINE
+   NARRATOR
+   Free, built-in text-to-speech (Web Speech API) for menu feedback once VoiceOver is
+   off. Every call cancels whatever's currently speaking first, which avoids Safari
+   piling up a backlog of stale announcements as the player moves quickly between
+   screens/options. If speech synthesis isn't available for some reason, this quietly
+   does nothing - real VoiceOver, if the player left it on, still covers the menus.
+   ===================================================================================== */
+
+function Narrator(){
+  this.enabled = ('speechSynthesis' in window) && (typeof window.SpeechSynthesisUtterance === 'function');
+}
+
+Narrator.prototype.speak = function(text){
+  if (!this.enabled || !text) return;
+  try {
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    window.speechSynthesis.speak(u);
+  } catch(e){ /* non-fatal */ }
+};
+
+Narrator.prototype.stop = function(){
+  if (!this.enabled) return;
+  try { window.speechSynthesis.cancel(); } catch(e){}
+};
+
+/* =====================================================================================
+   GESTURE ENGINE (play screen only)
    Distinguishes a short tap (pause) from a directional swipe (shoot) from a downward
    swipe (reload). Only the first finger down is tracked; a second finger touching down
    cancels the gesture. Listeners are non-passive so we can preventDefault() to stop
@@ -412,12 +548,6 @@ GestureEngine.prototype._start = function(e){
   if (e.touches.length !== 1){ return; }
 
   var t = e.touches[0];
-  var w = window.innerWidth;
-  if (t.clientX < w * GESTURE.edgeGuardFraction || t.clientX > w * (1 - GESTURE.edgeGuardFraction)){
-    // Extra caution near the screen edges where iOS's own back-swipe recogniser lives
-    // (mainly relevant if this ever runs inside plain Safari rather than standalone).
-    // We still track it, just flagged, so an intentional 9/3 o'clock swipe still works.
-  }
   this.active = { x0:t.clientX, y0:t.clientY, x:t.clientX, y:t.clientY, t0:performance.now() };
 };
 
@@ -502,12 +632,12 @@ Game.prototype.reset = function(){
   this.ammo = WEAPON.magazineSize;
   this.reloading = false;
   this.startedAt = 0;
-  this.nextSpawnAt = 0;
   this.running = false;
   this.paused = false;
   this.pauseStartedAt = 0;
   this.rafHandle = null;
   this.spawnTimeoutHandle = null;
+  this.lastPositionId = null;  // a target never spawns at the same position as the one before it
 };
 
 Game.prototype.start = function(){
@@ -542,11 +672,20 @@ Game.prototype._scheduleNextSpawn = function(overrideMs){
   }, delay);
 };
 
+Game.prototype._pickPosition = function(){
+  // Exclude wherever the previous target spawned, so the same direction never repeats
+  // back-to-back. Five positions means there are always at least four candidates left.
+  var choices = POSITIONS.filter(function(p){ return p.id !== this.lastPositionId; }, this);
+  var position = choices[Math.floor(Math.random() * choices.length)];
+  this.lastPositionId = position.id;
+  return position;
+};
+
 Game.prototype._spawnTarget = function(){
   var t = this.elapsedSeconds();
   var pool = TARGET_TYPES.filter(function(tt){ return tt.unlockAt <= t; });
   var type = pickWeighted(pool);
-  var position = POSITIONS[Math.floor(Math.random() * POSITIONS.length)];
+  var position = this._pickPosition();
   var durationMs = randRange(type.approachMs);
   var now = performance.now();
 
@@ -702,12 +841,13 @@ Game.prototype.getHighScore = function(){
    ===================================================================================== */
 
 var audio = new AudioEngine();
+var narrator = new Narrator();
 var els = {};
-['screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover',
+['screen-boot','screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover',
  'btn-start','btn-howtoplay','btn-help-back','btn-confirmed','btn-confirm-back',
  'btn-pause','btn-resume','btn-quit','btn-again','btn-menu',
  'playfield','hud-ammo','hud-score','pause-summary','gameover-heading','gameover-detail',
- 'gameover-score','gameover-best','high-score-line'
+ 'gameover-score','gameover-best','high-score-line','asset-status'
 ].forEach(function(id){ els[id] = document.getElementById(id); });
 
 var ui = {
@@ -716,17 +856,21 @@ var ui = {
     els['hud-score'].textContent = game.score;
   },
   onGameOver: function(game, reason, target){
+    var detail, heading;
     if (reason === 'arrived'){
-      els['gameover-heading'].textContent = 'Run over';
-      els['gameover-detail'].textContent = 'A ' + target.type.name + ' reached you from ' + target.position.label + '.';
+      heading = 'Run over';
+      detail = 'A ' + target.type.name + ' reached you from ' + target.position.label + '.';
     } else {
-      els['gameover-heading'].textContent = 'Run ended';
-      els['gameover-detail'].textContent = 'You ended the run manually.';
+      heading = 'Run ended';
+      detail = 'You ended the run manually.';
     }
+    els['gameover-heading'].textContent = heading;
+    els['gameover-detail'].textContent = detail;
     els['gameover-score'].textContent = game.score;
     var best = game.getHighScore();
-    els['gameover-best'].textContent = game.score >= best ? 'New best!' : ('Best: ' + best);
-    showScreen('screen-gameover');
+    var bestText = game.score >= best ? 'New best!' : ('Best: ' + best);
+    els['gameover-best'].textContent = bestText;
+    showScreen('screen-gameover', heading + '. ' + detail + ' Score ' + game.score + '. ' + bestText + '. Play again, or Main menu.');
   }
 };
 
@@ -738,28 +882,135 @@ var gesture = new GestureEngine(els['playfield'], {
   onSwipeUnrecognised: function(){ /* ambiguous angle between two positions - no-op */ }
 });
 
-function showScreen(id){
-  ['screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover'].forEach(function(s){
+/* -----------------------------------------------------------------------------------
+   Screen management + spoken announcements.
+   ----------------------------------------------------------------------------------- */
+
+var ALL_SCREENS = ['screen-boot','screen-start','screen-help','screen-confirm','screen-play','screen-pause','screen-gameover'];
+var currentScreenId = 'screen-boot';
+
+function showScreen(id, spokenText){
+  currentScreenId = id;
+  ALL_SCREENS.forEach(function(s){
     var el = els[s];
     if (!el) return;
     if (s === id){ el.hidden = false; el.setAttribute('aria-hidden','false'); }
     else { el.hidden = true; el.setAttribute('aria-hidden','true'); }
   });
-  // Move focus to the new screen's heading so VoiceOver reliably announces the screen
-  // change and lands somewhere sensible, instead of relying on live-region timing alone.
+  // Move focus to the new screen's heading so VoiceOver (if the player left it on)
+  // reliably announces the screen change too.
   var heading = els[id] && els[id].querySelector('h1, h2');
   if (heading){
-    // Defer very slightly - iOS VoiceOver can miss a focus() that happens in the same
-    // tick as the click that triggered it.
     setTimeout(function(){ heading.focus(); }, 30);
   }
+  if (spokenText) narrator.speak(spokenText);
 }
+
+function startScreenIntro(){
+  var best = game.getHighScore();
+  var s = 'Balloon Animal Pop. Start, or How to play.';
+  if (best > 0) s += ' Best score ' + best + '.';
+  return s;
+}
+
+var HELP_SPOKEN = 'How to play. Balloon animals approach as sound beacons from five ' +
+  'positions: 9, 10:30, 12, 1:30 and 3 o’clock. Swipe toward one to pop it before ' +
+  'it reaches you - for example up and left toward 10:30, or straight up toward 12. ' +
+  'Swipe down to reload. Some animals take more than one hit, some approach faster ' +
+  'than others, and the run ends the instant any one of them reaches you. Back.';
+
+var CONFIRM_SPOKEN = 'Turn VoiceOver off now if it isn’t already, then choose: ' +
+  'I’ve turned VoiceOver off, begin. Or, Back. You won’t need to turn VoiceOver ' +
+  'back on again this session.';
+
+/* -----------------------------------------------------------------------------------
+   Touch-explore layer for every menu screen (everything except the boot tap and the
+   live play screen, which are each handled on their own terms above). Mirrors the
+   VoiceOver interaction model the player already knows, but works with VoiceOver OFF:
+   touch and slide a finger to hear whatever is currently under it (via the Narrator),
+   lift while still over something to choose it. Sliding off before lifting cancels.
+   A plain quick tap works too - it's just explore-then-lift with no time in between.
+   If VoiceOver is actually on, VoiceOver owns single-finger touch first and this layer
+   simply never sees the events, so nothing here interferes with it either way.
+   ----------------------------------------------------------------------------------- */
+
+function screenIsExplorable(id){
+  return id !== 'screen-play' && id !== 'screen-boot';
+}
+
+function findSpeakable(el){
+  while (el && el.nodeType === 1){
+    if (el.hasAttribute && el.hasAttribute('data-speak')) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+var exploreState = { el: null };
+
+function exploreAt(clientX, clientY){
+  var atPoint = document.elementFromPoint(clientX, clientY);
+  var target = findSpeakable(atPoint);
+  if (target !== exploreState.el){
+    exploreState.el = target;
+    if (target) narrator.speak(target.getAttribute('data-speak'));
+  }
+}
+
+document.addEventListener('touchstart', function(e){
+  if (!screenIsExplorable(currentScreenId)) return;
+  if (e.touches.length !== 1) return;
+  exploreAt(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive:true });
+
+document.addEventListener('touchmove', function(e){
+  if (!screenIsExplorable(currentScreenId)) return;
+  if (e.touches.length !== 1) return;
+  exploreAt(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive:true });
+
+document.addEventListener('touchend', function(e){
+  if (!screenIsExplorable(currentScreenId)) return;
+  var target = exploreState.el;
+  exploreState.el = null;
+  if (target){
+    e.preventDefault(); // suppress the browser's own synthesised click - we fire our own
+    target.click();
+  }
+}, { passive:false });
+
+document.addEventListener('touchcancel', function(){ exploreState.el = null; });
+
+/* -----------------------------------------------------------------------------------
+   Boot / unlock.
+   ----------------------------------------------------------------------------------- */
+
+function boot(){
+  audio.unlock();
+  audio.loadAssets().then(function(status){
+    els['asset-status'].textContent = status.loaded > 0
+      ? (status.loaded + '/' + status.total + ' sound files loaded')
+      : 'Using placeholder sounds - add files to the "sounds" folder to replace them';
+  });
+  refreshHighScoreLine();
+  narrator.speak('Balloon Animal Pop. Loading sounds.');
+  showScreen('screen-start', startScreenIntro());
+}
+els['screen-boot'].addEventListener('click', boot);
+els['screen-boot'].addEventListener('keydown', function(e){
+  if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); boot(); }
+});
+
+/* -----------------------------------------------------------------------------------
+   Remaining screen wiring.
+   ----------------------------------------------------------------------------------- */
 
 function pauseGame(){
   if (!game.running) return;
   game.pause();
-  els['pause-summary'].textContent = 'Score so far: ' + game.score;
-  showScreen('screen-pause');
+  var summary = 'Score so far: ' + game.score;
+  els['pause-summary'].textContent = summary;
+  showScreen('screen-pause', 'Paused. ' + summary + '. Resume, or End run.');
 }
 
 function resumeGame(){
@@ -767,15 +1018,19 @@ function resumeGame(){
   showScreen('screen-play');
 }
 
+function refreshHighScoreLine(){
+  var best = game.getHighScore();
+  els['high-score-line'].textContent = best > 0 ? ('Best score: ' + best) : '';
+}
+
 els['btn-start'].addEventListener('click', function(){
-  audio.unlock();
-  audio.playSfx('ui');
-  showScreen('screen-confirm');
+  showScreen('screen-confirm', CONFIRM_SPOKEN);
 });
-els['btn-howtoplay'].addEventListener('click', function(){ showScreen('screen-help'); });
-els['btn-help-back'].addEventListener('click', function(){ showScreen('screen-start'); });
-els['btn-confirm-back'].addEventListener('click', function(){ showScreen('screen-start'); });
+els['btn-howtoplay'].addEventListener('click', function(){ showScreen('screen-help', HELP_SPOKEN); });
+els['btn-help-back'].addEventListener('click', function(){ showScreen('screen-start', startScreenIntro()); });
+els['btn-confirm-back'].addEventListener('click', function(){ showScreen('screen-start', startScreenIntro()); });
 els['btn-confirmed'].addEventListener('click', function(){
+  narrator.stop();
   showScreen('screen-play');
   game.start();
 });
@@ -785,18 +1040,12 @@ els['btn-quit'].addEventListener('click', function(){
   game.endRun('quit');
 });
 els['btn-again'].addEventListener('click', function(){
-  showScreen('screen-confirm');
+  showScreen('screen-confirm', CONFIRM_SPOKEN);
 });
 els['btn-menu'].addEventListener('click', function(){
-  showScreen('screen-start');
   refreshHighScoreLine();
+  showScreen('screen-start', startScreenIntro());
 });
-
-function refreshHighScoreLine(){
-  var best = game.getHighScore();
-  els['high-score-line'].textContent = best > 0 ? ('Best score: ' + best) : '';
-}
-refreshHighScoreLine();
 
 /* Keep the 100vh-on-iOS-Safari problem (address bar show/hide) from shifting layout
    mid-swipe. */
