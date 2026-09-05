@@ -220,7 +220,6 @@ var SOUND_FILES = {
   empty:         'sounds/empty.wav',
   'reload-start':'sounds/reload-start.wav',
   'reload-done': 'sounds/reload-done.wav',
-  spawn:         'sounds/spawn.wav',
   gameover:      'sounds/gameover.wav'
 };
 
@@ -430,7 +429,6 @@ AudioEngine.prototype.playSfx = function(name, panValue){
     case 'empty':   tone(160, 0.06, 'square', 0.1); tone(120, 0.08, 'square', 0.1, 0.07); break;
     case 'reload-start': tone(300, 0.1, 'sine', 0.15); break;
     case 'reload-done':  tone(500, 0.06, 'sine', 0.18); tone(760, 0.08, 'sine', 0.18, 0.07); break;
-    case 'spawn':   tone(1800, 0.04, 'sine', 0.06); break;
     case 'ui':      tone(700, 0.05, 'sine', 0.12); break;
     case 'gameover':
       tone(500, 0.18, 'sawtooth', 0.22);
@@ -633,7 +631,6 @@ Game.prototype._spawnTarget = function(){
   var now = performance.now();
 
   var voice = this.audio.makeTargetVoice(type, position.pan, 0.05, 1.0, durationMs);
-  this.audio.playSfx('spawn', position.pan);
 
   this.targets.push({
     type: type,
