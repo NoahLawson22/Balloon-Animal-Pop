@@ -173,8 +173,11 @@ var TARGET_TYPES = [
 var DIFFICULTY = {
   baseIntervalMs: 4200,   // gap after a kill, at t=0
   minIntervalMs: 650,     // gap floor, approached but never quite reached
-  rampSeconds: 150        // rough time constant for the exponential decay toward the floor
+  rampSeconds: 150,       // rough time constant for the exponential decay toward the floor
+  intervalJitter: 0.25    // each gap varies randomly by +/- this fraction of its base value
 };
+
+var COUNTDOWN_MS = 3000; // "3, 2, 1, go" pause after Start is pressed, before the run begins
 
 var WEAPON = {
   magazineSize: 6,
@@ -205,8 +208,12 @@ var STORAGE_KEY = 'balloon-animal-pop-highscore-v1';
 //
 // Target beacons should be a short, SEAMLESSLY LOOPING clip (they play on repeat for the
 // whole approach) - a continuous character sound or an evenly-spaced pulse both work.
+// "start" is the countdown played after Start is pressed, before the run begins - it
+// should run about COUNTDOWN_MS (3 seconds) long; until it's added, three low beeps
+// followed by one higher "go" beep are synthesised in its place.
 // ---------------------------------------------------------------------------------------
 var SOUND_FILES = {
+  start:      'sounds/start.wav',
   snake:      'sounds/snake.wav',
   lion:       'sounds/lion.wav',
   chimpanzee: 'sounds/chimpanzee.wav',
@@ -430,6 +437,17 @@ AudioEngine.prototype.playSfx = function(name, panValue){
     case 'reload-start': tone(300, 0.1, 'sine', 0.15); break;
     case 'reload-done':  tone(500, 0.06, 'sine', 0.18); tone(760, 0.08, 'sine', 0.18, 0.07); break;
     case 'ui':      tone(700, 0.05, 'sine', 0.12); break;
+    // 3-2-1-go countdown, played after Start/Play again and before the run actually
+    // begins: three low beeps a second apart, then a higher beep at the 3-second mark
+    // (COUNTDOWN_MS) when gameplay starts. Replace with your own start.wav for a
+    // custom countdown - if it's longer or shorter than 3 seconds, update COUNTDOWN_MS
+    // to match so the run still begins right as your recording finishes.
+    case 'start':
+      tone(440, 0.18, 'sine', 0.3, 0);
+      tone(440, 0.18, 'sine', 0.3, 1.0);
+      tone(440, 0.18, 'sine', 0.3, 2.0);
+      tone(880, 0.22, 'sine', 0.3, 3.0);
+      break;
     case 'gameover':
       tone(500, 0.18, 'sawtooth', 0.22);
       tone(350, 0.22, 'sawtooth', 0.2, 0.12);
@@ -598,7 +616,11 @@ Game.prototype.elapsedSeconds = function(){
 Game.prototype._spawnInterval = function(){
   var t = this.elapsedSeconds();
   var span = DIFFICULTY.baseIntervalMs - DIFFICULTY.minIntervalMs;
-  return DIFFICULTY.minIntervalMs + span * Math.exp(-t / DIFFICULTY.rampSeconds);
+  var base = DIFFICULTY.minIntervalMs + span * Math.exp(-t / DIFFICULTY.rampSeconds);
+  // Randomise each gap by +/- intervalJitter (25%) so spawns don't fall on a
+  // perfectly predictable beat.
+  var jitter = 1 + (Math.random() * 2 - 1) * DIFFICULTY.intervalJitter;
+  return base * jitter;
 };
 
 // Chains itself: every firing immediately schedules the next one. This is what
@@ -967,20 +989,21 @@ function resumeGame(){
   showScreen('screen-play');
 }
 
-els['btn-start'].addEventListener('click', function(){
+// Shared by Start and Play again: move to the play screen, run the 3-2-1-go
+// countdown, then actually start spawning once it finishes.
+function beginRun(){
   narrator.stop();
   showScreen('screen-play');
-  game.start();
-});
+  audio.playSfx('start', 0);
+  setTimeout(function(){ game.start(); }, COUNTDOWN_MS);
+}
+
+els['btn-start'].addEventListener('click', beginRun);
 els['btn-howtoplay'].addEventListener('click', function(){ showScreen('screen-help'); });
 els['btn-help-back'].addEventListener('click', function(){ showScreen('screen-start'); });
 els['btn-resume'].addEventListener('click', function(){ resumeGame(); });
 els['btn-quit'].addEventListener('click', function(){ game.endRun('quit'); });
-els['btn-again'].addEventListener('click', function(){
-  narrator.stop();
-  showScreen('screen-play');
-  game.start();
-});
+els['btn-again'].addEventListener('click', beginRun);
 els['btn-menu'].addEventListener('click', function(){ showScreen('screen-start'); });
 
 /* Keep the 100vh-on-iOS-Safari problem (address bar show/hide) from shifting layout
